@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+contest_cache.json
+latest_contests.md
