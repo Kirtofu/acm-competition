@@ -1,4 +1,6 @@
 __pycache__/
 *.pyc
+.claude/
 contest_cache.json
 latest_contests.md
+latest_contests.ics
