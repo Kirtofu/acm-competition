@@ -948,6 +948,7 @@ class ContestAgentApp:
         make_button(header, "ICS", self.export_ics).pack(side=RIGHT, padx=4)
         make_button(header, "Rating", self.show_rating).pack(side=RIGHT, padx=4)
         make_button(header, "推荐", self.show_recommendation).pack(side=RIGHT, padx=4)
+        make_button(header, "测提醒", self.test_reminder).pack(side=RIGHT, padx=4)
 
         left = Frame(self.canvas, bg="#fff8fb", padx=10, pady=10, highlightthickness=1, highlightbackground="#f3c8d5")
         Label(left, text="未来 7 天", fg="#6c5664", bg="#fff8fb", font=("Microsoft YaHei UI", 10, "bold")).pack(anchor="w")
@@ -1129,13 +1130,15 @@ class ContestAgentApp:
             self.refresh_async()
         elif any(word in lowered for word in ["帮助", "help", "指令"]):
             self.show_help()
+        elif any(word in lowered for word in ["测试提醒", "test reminder", "测试通知"]):
+            self.test_reminder()
         elif any(word in lowered for word in ["提醒", "remind", "闹钟"]):
             if any(word in lowered for word in ["关闭", "关掉", "停止", "off", "disable"]):
                 self.reminder_enabled.set(False)
                 self.write_agent("已关闭赛前 30 分钟提醒。")
             else:
                 self.reminder_enabled.set(True)
-                self.write_agent("已开启赛前 30 分钟提醒。程序保持运行时，我会弹窗提醒。")
+                self.write_agent("已开启赛前 30 分钟提醒。程序保持运行时，我会发系统通知，并弹出应用内提醒窗。")
                 self.check_reminders()
         elif any(word in lowered for word in ["日历", "ics", "calendar"]):
             self.export_ics()
@@ -1162,7 +1165,8 @@ class ContestAgentApp:
             "- 我的 Rating：填入 CF / AtCoder handle 后展示当前分、历史最高、近 5 场 Δ。\n"
             "- 每日推荐：基于 CF rating 推 3 题（已过滤 AC）。\n"
             "- 平台筛选：左侧 checkbox 控制 listbox 显示的平台（含 XCPC 同步赛/重现赛）。\n"
-            "- 赛前30分钟提醒：勾选后会发 Windows Toast 通知（失败回退弹窗）。\n"
+            "- 赛前30分钟提醒：勾选后会发 Windows Toast，并显示应用内置顶提醒窗。\n"
+            "- 测试提醒：点击「测提醒」或输入「测试提醒」可以立即验证通知链路。\n"
             "- 每小时自动刷新：勾选后后台保持最新（避免与手动刷新撞车）。\n"
             "- ⚠ 标记表示同时段比赛冲突；列表底部「补题区」展示 14 天内已结束的赛事。"
         )
@@ -1404,15 +1408,74 @@ class ContestAgentApp:
         text = "\n\n".join(lines)
         self.write_agent(f"⏰ 赛前提醒：\n{text}")
         self.root.bell()
+        self.show_local_reminder(text)
         title_first = contests[0].title if len(contests) == 1 else f"{len(contests)} 场即将开始"
         toast_body = f"[{contests[0].platform}] {title_first}" if len(contests) == 1 else text.split("\n\n")[0]
 
         def notify() -> None:
-            ok = send_toast(f"赛前 {self.reminder_minutes} 分钟", toast_body)
-            if not ok:
-                self.root.after(0, lambda: messagebox.showinfo("算法竞赛赛前提醒", text))
+            send_toast(f"赛前 {self.reminder_minutes} 分钟", toast_body)
 
         threading.Thread(target=notify, daemon=True).start()
+
+    def show_local_reminder(self, text: str) -> None:
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(1800, lambda: self.root.attributes("-topmost", False))
+
+        popup = Toplevel(self.root)
+        popup.title("算法竞赛赛前提醒")
+        popup.configure(bg="#fff8fb")
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.attributes("-topmost", True)
+
+        Label(
+            popup,
+            text="赛前提醒",
+            bg="#fff8fb",
+            fg="#2b2730",
+            font=("Microsoft YaHei UI", 13, "bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 4))
+        Label(
+            popup,
+            text=text,
+            bg="#fff8fb",
+            fg="#2e2932",
+            justify=LEFT,
+            wraplength=440,
+            font=("Microsoft YaHei UI", 10),
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+        Button(
+            popup,
+            text="知道了",
+            command=popup.destroy,
+            bg="#f5c6d6",
+            fg="#29242b",
+            activebackground="#f0aeca",
+            relief="flat",
+            padx=18,
+            pady=7,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            cursor="hand2",
+        ).pack(anchor="e", padx=16, pady=(0, 14))
+
+        popup.update_idletasks()
+        x = self.root.winfo_x() + self.root.winfo_width() - popup.winfo_width() - 36
+        y = self.root.winfo_y() + 72
+        popup.geometry(f"+{max(0, x)}+{max(0, y)}")
+        popup.after(15000, lambda: popup.winfo_exists() and popup.destroy())
+
+    def test_reminder(self) -> None:
+        sample = Contest(
+            platform="TEST",
+            title="通知功能测试",
+            start=datetime.now(BEIJING) + timedelta(minutes=self.reminder_minutes),
+            duration_seconds=3600,
+            link="local://test-reminder",
+            note="这是测试提醒，不会写入赛程。",
+        )
+        self.write_meta("正在测试提醒通知...")
+        self.show_reminder([sample])
 
     def run(self) -> None:
         self.root.mainloop()
